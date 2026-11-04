@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 480">
+  <!-- Runova runner silhouette — white on transparent (for dark backgrounds) -->
+  <g fill="none" stroke="#ffffff" stroke-width="34" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M292 148 L250 238"/>
+    <path d="M282 176 L344 208 L380 172"/>
+    <path d="M284 178 L224 202 L190 244"/>
+    <path d="M250 238 L322 272 L344 344"/>
+    <path d="M250 238 L182 292 L118 282"/>
+  </g>
+  <circle cx="306" cy="106" r="30" fill="#ffffff"/>
+</svg>
