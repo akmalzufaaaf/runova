@@ -2,10 +2,13 @@
 
 ## Main logo
 
-`runova-logo-main.jpg` is Runova's canonical main logo and is the exact image
-selected for the project. The web app loads the same file from
-`frontend/logo.jpg`.
+`runova-app-icon.svg` is Runova's main logo: the abstract curved-runner mark we
+created for the project, shown in white on the Runova purple gradient. The web
+app loads the same artwork from `frontend/logo.svg`.
 
-The SVG/PNG files in this folder are supporting variants derived from the same
-runner mark (app icon, purple/white marks, and horizontal lockup). If there is
-ever a conflict, `runova-logo-main.jpg` is the source of truth.
+Supporting variants in this folder:
+
+- `runova-icon.svg` / `.png` — white runner on black
+- `runova-mark.svg` / `.png` — purple runner on transparent
+- `runova-mark-white.svg` — white runner on transparent
+- `runova-logo-horizontal.svg` / `.png` — icon with the RUNOVA wordmark

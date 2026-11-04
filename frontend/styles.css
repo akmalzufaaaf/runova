@@ -27,7 +27,7 @@ body { margin: 0; font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto
 .login-card input { background: #f5f6fb; border: 1.5px solid var(--line); border-radius: 13px; padding: 13px 14px; color: var(--ink); font-size: 14px; width: 100%; font-family: inherit; }
 .login-card input:focus { outline: 2px solid var(--purple); border-color: transparent; }
 .logo { width: 42px; height: 42px; border-radius: 13px; background: var(--purple-grad); display: grid; place-items: center; font-weight: 900; font-size: 23px; color: #fff; box-shadow: 0 8px 20px rgba(98,95,224,.4); }
-.logo-img { width: 132px; height: auto; margin: 0 auto; border-radius: 16px; box-shadow: 0 12px 26px rgba(10,10,20,.28); }
+.logo-img { width: 76px; height: 76px; margin: 0 auto; border-radius: 20px; box-shadow: 0 12px 26px rgba(98,95,224,.35); }
 .btn-block { width: 100%; padding: 14px; font-size: 15px; }
 
 /* ---------- purple headers (home & profile) ---------- */
