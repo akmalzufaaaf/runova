@@ -8,6 +8,7 @@ const DEPOK = { lat: -7.7610, lon: 110.4090 }; // Babarsari, Depok, Sleman, Yogy
 
 const state = {
   user: null,
+  token: localStorage.getItem('runova_token') || null,
   start: { ...DEPOK },
   distanceKm: 5,
   vibe: 'nature',
@@ -29,15 +30,26 @@ const VIBE_LABELS = {
 };
 const $ = (id) => document.getElementById(id);
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+/* When the frontend is hosted separately (GitHub Pages), point it at a hosted
+   backend once: localStorage.setItem('runova_api_base', 'https://your-backend.up.railway.app') */
+const API_BASE = localStorage.getItem('runova_api_base') || '';
 
 /* ================= LOGIN ================= */
 function initLogin() {
   const saved = localStorage.getItem('runova_user');
   if (saved) { state.user = saved; enterApp(); }
-  $('loginForm').addEventListener('submit', (e) => {
+  $('loginForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const name = $('loginName').value.trim();
     if (!name) return;
+    // Real account when a backend+DB is reachable; seamless local login otherwise.
+    const password = $('loginPass').value;
+    let auth = await postJson('/api/auth/login', { identifier: name, password });
+    if (!auth) auth = await postJson('/api/auth/register', { name, password });
+    if (auth && auth.token) {
+      state.token = auth.token;
+      localStorage.setItem('runova_token', auth.token);
+    }
     state.user = name;
     localStorage.setItem('runova_user', name);
     enterApp();
@@ -45,6 +57,8 @@ function initLogin() {
   });
   $('btnLogout').addEventListener('click', () => {
     localStorage.removeItem('runova_user');
+    localStorage.removeItem('runova_token');
+    state.token = null;
     stopRun(false);
     $('loginScreen').classList.remove('hidden');
   });
@@ -84,6 +98,9 @@ function saveHistory(entry) {
   const h = loadHistory();
   h.unshift(entry);
   localStorage.setItem('runova_history', JSON.stringify(h.slice(0, 30)));
+  if (state.token) { // sync to PostgreSQL when logged in via backend (fire-and-forget)
+    postJson('/api/runs', { name: entry.name, km: entry.km, kcal: entry.kcal, vibe: entry.vibe, vibeMatch: entry.vibeMatch, safety: entry.safety, coords: entry.coords });
+  }
 }
 function routeThumb(coords) {
   if (!coords || coords.length < 2) return '';
@@ -262,7 +279,9 @@ function fmtClock(totalSec) {
    (e.g. static GitHub Pages hosting) so callers can use local fallbacks. */
 async function postJson(url, payload) {
   try {
-    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    const headers = { 'Content-Type': 'application/json' };
+    if (state.token) headers.Authorization = `Bearer ${state.token}`;
+    const r = await fetch(url.startsWith('/') ? API_BASE + url : url, { method: 'POST', headers, body: JSON.stringify(payload) });
     if (!r.ok) return null;
     return await r.json();
   } catch (e) { return null; }
@@ -326,7 +345,7 @@ async function fetchVibeFeatures(targetKm) {
   node[tourism](around:${radius},${lat},${lon});
 );
 out tags geom;`;
-  for (const url of ['/api/vibe', 'https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter']) {
+  for (const url of [API_BASE + '/api/vibe', 'https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter']) {
     try {
       const res = await fetch(url, { method: 'POST', body: 'data=' + encodeURIComponent(q) });
       if (res.ok) return parseFeatures((await res.json()).elements || []);
@@ -705,7 +724,7 @@ function startRun(route) {
   // Audio guide: AI writes one narration per highlight; spoken when you pass it
   const guidePoints = (route.scores && route.scores.highlightPoints) || [];
   if (guidePoints.length) {
-    fetch('/api/ai/guide', {
+    fetch(API_BASE + '/api/ai/guide', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ vibe: state.vibe, points: guidePoints }),
     }).then(r => r.json()).then(d => {
@@ -745,7 +764,7 @@ function finishRun() {
   const run = state.run; if (!run) return;
   const { route, elapsedSec } = run;
   const kcal = Math.round(route.distanceKm * 62);
-  saveHistory({ date: new Date().toISOString(), name: route.name, km: route.distanceKm, kcal, vibe: state.vibe, coords: route.coords });
+  saveHistory({ date: new Date().toISOString(), name: route.name, km: route.distanceKm, kcal, vibe: state.vibe, vibeMatch: route.vibeMatch, safety: route.scores.safety, coords: route.coords });
   stopRun(false);
   speak(`Selamat! Kamu menyelesaikan ${route.name}, ${route.distanceKm.toFixed(1)} kilometer. Kerja bagus!`);
   $('congratsText').textContent = `You completed the ${route.name} and arrived back at your start. No getting lost — the loop brought you home.`;

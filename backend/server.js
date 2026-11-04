@@ -7,6 +7,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const PORT = process.env.PORT || 5173;
 const FRONTEND = path.join(__dirname, '..', 'frontend');
@@ -209,13 +210,132 @@ async function handleAiGuide(req, res) {
   res.end(JSON.stringify({ mode, model: mode === 'llm' ? AI_MODEL : 'local-heuristics', items }));
 }
 
+/* ================= DATABASE (PostgreSQL, optional) =================
+   Active only when DATABASE_URL is set. On Railway use the internal URL
+   (backend + Postgres in the same project); locally use DATABASE_PUBLIC_URL. */
+let pool = null, dbReady = false;
+function initDb() {
+  if (!process.env.DATABASE_URL) { console.log('DB: disabled (no DATABASE_URL) — local/demo mode'); return; }
+  let Pool;
+  try { ({ Pool } = require('pg')); } catch (e) { console.error('DB: package "pg" not installed — run npm install'); return; }
+  const url = process.env.DATABASE_URL;
+  pool = new Pool({ connectionString: url, ssl: url.includes('railway.internal') ? false : { rejectUnauthorized: false } });
+  pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id SERIAL PRIMARY KEY, name TEXT UNIQUE NOT NULL, email TEXT UNIQUE,
+      password_hash TEXT NOT NULL, created_at TIMESTAMPTZ DEFAULT now());
+    CREATE TABLE IF NOT EXISTS runs (
+      id SERIAL PRIMARY KEY, user_id INT REFERENCES users(id) ON DELETE CASCADE,
+      route_name TEXT, distance_km NUMERIC, kcal INT, vibe TEXT, vibe_match INT,
+      safety_score INT, rating INT, geometry JSONB, created_at TIMESTAMPTZ DEFAULT now());
+    CREATE INDEX IF NOT EXISTS idx_runs_user ON runs(user_id, created_at DESC);
+    CREATE TABLE IF NOT EXISTS saved_routes (
+      id SERIAL PRIMARY KEY, user_id INT REFERENCES users(id) ON DELETE CASCADE,
+      name TEXT, distance_km NUMERIC, vibe TEXT, scores JSONB, geometry JSONB,
+      created_at TIMESTAMPTZ DEFAULT now());
+    CREATE TABLE IF NOT EXISTS user_preferences (
+      user_id INT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      weight_nature NUMERIC DEFAULT 1, weight_scenic NUMERIC DEFAULT 1,
+      weight_urban NUMERIC DEFAULT 1, weight_historic NUMERIC DEFAULT 1,
+      updated_at TIMESTAMPTZ DEFAULT now());
+  `).then(() => { dbReady = true; console.log('DB: connected, tables ready'); })
+    .catch(e => console.error('DB: connection/init failed —', e.message));
+}
+const TOKEN_SECRET = process.env.SESSION_SECRET || 'runova-dev-secret';
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  return `${salt}:${crypto.scryptSync(password, salt, 64).toString('hex')}`;
+}
+function verifyPassword(password, stored) {
+  const [salt, hash] = (stored || '').split(':');
+  if (!salt || !hash) return false;
+  const test = crypto.scryptSync(password, salt, 64);
+  return crypto.timingSafeEqual(Buffer.from(hash, 'hex'), test);
+}
+function signToken(user) {
+  const payload = Buffer.from(JSON.stringify({ uid: user.id, name: user.name, exp: Date.now() + 30 * 24 * 3600 * 1000 })).toString('base64url');
+  const sig = crypto.createHmac('sha256', TOKEN_SECRET).update(payload).digest('base64url');
+  return `${payload}.${sig}`;
+}
+function authUser(req) {
+  const m = /^Bearer (.+)$/.exec(req.headers.authorization || '');
+  if (!m) return null;
+  const [payload, sig] = m[1].split('.');
+  if (!payload || !sig) return null;
+  const expected = crypto.createHmac('sha256', TOKEN_SECRET).update(payload).digest('base64url');
+  if (sig !== expected) return null;
+  try {
+    const data = JSON.parse(Buffer.from(payload, 'base64url').toString());
+    return data.exp > Date.now() ? data : null;
+  } catch (e) { return null; }
+}
+function sendJson(res, status, obj) {
+  res.writeHead(status, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(obj));
+}
+async function handleRegister(req, res) {
+  if (!dbReady) return sendJson(res, 503, { error: 'database unavailable' });
+  const b = JSON.parse((await readBody(req)).toString() || '{}');
+  const name = (b.name || '').trim();
+  if (!name || !b.password || String(b.password).length < 4) return sendJson(res, 400, { error: 'name and password (min 4 chars) required' });
+  try {
+    const r = await pool.query('INSERT INTO users (name, email, password_hash) VALUES ($1,$2,$3) RETURNING id, name',
+      [name, b.email || null, hashPassword(String(b.password))]);
+    return sendJson(res, 201, { token: signToken(r.rows[0]), user: r.rows[0] });
+  } catch (e) {
+    return sendJson(res, e.code === '23505' ? 409 : 500, { error: e.code === '23505' ? 'user already exists' : 'register failed' });
+  }
+}
+async function handleLogin(req, res) {
+  if (!dbReady) return sendJson(res, 503, { error: 'database unavailable' });
+  const b = JSON.parse((await readBody(req)).toString() || '{}');
+  const idf = (b.identifier || b.name || '').trim();
+  const r = await pool.query('SELECT id, name, password_hash FROM users WHERE name=$1 OR email=$1', [idf]);
+  const user = r.rows[0];
+  if (!user || !verifyPassword(String(b.password || ''), user.password_hash)) return sendJson(res, 401, { error: 'invalid credentials' });
+  return sendJson(res, 200, { token: signToken(user), user: { id: user.id, name: user.name } });
+}
+async function handleRuns(req, res) {
+  const auth = authUser(req);
+  if (!auth) return sendJson(res, 401, { error: 'login required' });
+  if (!dbReady) return sendJson(res, 503, { error: 'database unavailable' });
+  if (req.method === 'POST') {
+    const b = JSON.parse((await readBody(req)).toString() || '{}');
+    const r = await pool.query(
+      `INSERT INTO runs (user_id, route_name, distance_km, kcal, vibe, vibe_match, safety_score, rating, geometry)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id, created_at`,
+      [auth.uid, b.name || 'Runova Loop', b.km || b.distanceKm || 0, b.kcal || 0, b.vibe || null,
+       b.vibeMatch || null, b.safety || null, b.rating || null, JSON.stringify(b.coords || b.geometry || [])]);
+    return sendJson(res, 201, { run: r.rows[0] });
+  }
+  const r = await pool.query(
+    `SELECT id, route_name AS name, distance_km::float AS km, kcal, vibe, vibe_match AS "vibeMatch",
+            safety_score AS safety, rating, geometry AS coords, created_at AS date
+     FROM runs WHERE user_id=$1 ORDER BY created_at DESC LIMIT 30`, [auth.uid]);
+  return sendJson(res, 200, { runs: r.rows });
+}
+async function handleProfile(req, res) {
+  const auth = authUser(req);
+  if (!auth) return sendJson(res, 401, { error: 'login required' });
+  if (!dbReady) return sendJson(res, 503, { error: 'database unavailable' });
+  const r = await pool.query(
+    `SELECT COUNT(*)::int AS runs, COALESCE(SUM(distance_km),0)::float AS total_km, COALESCE(SUM(kcal),0)::int AS total_kcal
+     FROM runs WHERE user_id=$1`, [auth.uid]);
+  return sendJson(res, 200, { user: { id: auth.uid, name: auth.name }, ...r.rows[0] });
+}
+initDb();
+
 const server = http.createServer(async (req, res) => {
   const urlPath = req.url.split('?')[0];
 
   if (urlPath === '/api/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ app: 'Runova', status: 'ok', time: new Date().toISOString() }));
+    return res.end(JSON.stringify({ app: 'Runova', status: 'ok', db: dbReady ? 'connected' : (pool ? 'connecting' : 'disabled'), aiKey: !!AI_KEY, time: new Date().toISOString() }));
   }
+  if (req.method === 'POST' && urlPath === '/api/auth/register') return handleRegister(req, res);
+  if (req.method === 'POST' && urlPath === '/api/auth/login') return handleLogin(req, res);
+  if ((req.method === 'POST' || req.method === 'GET') && urlPath === '/api/runs') return handleRuns(req, res);
+  if (req.method === 'GET' && urlPath === '/api/profile') return handleProfile(req, res);
   if (req.method === 'POST' && urlPath === '/api/route') {
     return proxy(req, res, ['https://valhalla1.openstreetmap.de/route'], 'application/json');
   }
