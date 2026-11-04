@@ -24,7 +24,7 @@ function readBody(req) {
 }
 /* Never crash on malformed JSON bodies — treat them as empty objects */
 async function readJsonBody(req) {
-  try { return await readJsonBody(req); } catch (e) { return {}; }
+  try { return JSON.parse((await readBody(req)).toString() || '{}'); } catch (e) { return {}; }
 }
 process.on('unhandledRejection', (e) => console.error('Unhandled rejection (kept alive):', e && e.message));
 
