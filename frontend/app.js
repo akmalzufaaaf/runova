@@ -258,14 +258,26 @@ function fmtClock(totalSec) {
 }
 
 /* ================= LOOP ENGINE (via backend proxy) ================= */
+/* Backend-first API helper: returns null when no backend is reachable
+   (e.g. static GitHub Pages hosting) so callers can use local fallbacks. */
+async function postJson(url, payload) {
+  try {
+    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    if (!r.ok) return null;
+    return await r.json();
+  } catch (e) { return null; }
+}
+
 async function valhallaRoute(points) {
-  const res = await fetch('/api/route', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      locations: points.map(p => ({ lat: p.lat, lon: p.lon })),
-      costing: 'pedestrian', shape_format: 'geojson',
-      directions_options: { units: 'kilometers', language: 'en-US' },
-    }),
+  const payload = {
+    locations: points.map(p => ({ lat: p.lat, lon: p.lon })),
+    costing: 'pedestrian', shape_format: 'geojson',
+    directions_options: { units: 'kilometers', language: 'en-US' },
+  };
+  const viaBackend = await postJson('/api/route', payload);
+  if (viaBackend) return viaBackend;
+  const res = await fetch('https://valhalla1.openstreetmap.de/route', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
   });
   if (!res.ok) throw new Error(`Routing ${res.status}`);
   return res.json();
@@ -314,10 +326,12 @@ async function fetchVibeFeatures(targetKm) {
   node[tourism](around:${radius},${lat},${lon});
 );
 out tags geom;`;
-  try {
-    const res = await fetch('/api/vibe', { method: 'POST', body: 'data=' + encodeURIComponent(q) });
-    if (res.ok) return parseFeatures((await res.json()).elements || []);
-  } catch (e) { /* degrade gracefully */ }
+  for (const url of ['/api/vibe', 'https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter']) {
+    try {
+      const res = await fetch(url, { method: 'POST', body: 'data=' + encodeURIComponent(q) });
+      if (res.ok) return parseFeatures((await res.json()).elements || []);
+    } catch (e) { /* try next endpoint */ }
+  }
   return null;
 }
 function parseFeatures(elements) {
@@ -542,14 +556,16 @@ function applyDistance(km) {
    based ONLY on computed facts (distance, scores, highlights). */
 async function enhanceWithAi() {
   try {
-    const res = await fetch('/api/ai/explain', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        vibe: state.vibe,
-        routes: state.routes.map(r => ({ name: r.name, distanceKm: r.distanceKm, vibeMatch: r.vibeMatch, scores: r.scores })),
-      }),
+    let data = await postJson('/api/ai/explain', {
+      vibe: state.vibe,
+      routes: state.routes.map(r => ({ name: r.name, distanceKm: r.distanceKm, vibeMatch: r.vibeMatch, scores: r.scores })),
     });
-    const data = await res.json();
+    if (!data) { // static hosting: local explanation templates
+      data = { mode: 'fallback', items: state.routes.map((r, i) => {
+        const h = (r.scores && r.scores.highlights) || [];
+        return { index: i, name: r.name, explanation: `A ${r.distanceKm.toFixed(1)} km loop ${h.length ? `past ${h.slice(0, 2).join(' and ')}` : 'through your neighborhood streets'} — ${r.vibeMatch}% ${state.vibe} match, always ending back at your start.` };
+      }) };
+    }
     for (const item of data.items || []) {
       const route = state.routes[item.index];
       if (!route) continue;
@@ -576,16 +592,38 @@ function chipGroup(id, attr, apply) {
 chipGroup('moodChips', 'mood', v => { state.mood = v; });
 chipGroup('timeChips', 'min', v => { state.minutes = parseInt(v, 10); });
 
+/* Local fallbacks (mirror the backend heuristics) for static hosting without a backend */
+function localDecide(mood, minutes) {
+  const table = {
+    stressed: { vibe: 'nature', pace: 7.0, maxKm: 8, reason: 'Kamu sedang stres — AI memilih rute nature yang teduh dan santai supaya lari terasa menenangkan, bukan menambah beban.' },
+    tired: { vibe: 'scenic', pace: 7.5, maxKm: 6, reason: 'Energi kamu lagi rendah — AI memilih rute scenic pendek dekat air yang ringan dijalani tapi tetap memberi pemandangan menyegarkan.' },
+    fresh: { vibe: 'surprise', pace: 6.5, maxKm: 10, reason: 'Kamu lagi fresh — AI memilih rute kejutan yang bervariasi supaya larinya seru dan tidak membosankan.' },
+    energetic: { vibe: 'urban', pace: 5.8, maxKm: 12, reason: 'Energi kamu lagi tinggi — AI memilih rute urban yang hidup dan sedikit lebih jauh untuk membakar energi itu.' },
+  };
+  const t = table[mood] || table.fresh;
+  return { distanceKm: Math.min(t.maxKm, Math.max(2, Math.round((minutes / t.pace) * 2) / 2)), vibe: t.vibe, reason: t.reason };
+}
+function localRefine(text, current) {
+  const t = (text || '').toLowerCase();
+  const boost = [];
+  let vibe = current.vibe, distanceKm = current.distanceKm, action = 'rerank';
+  if (/hijau|green|alam|nature|taman|park|teduh|shady/.test(t)) { boost.push('nature'); vibe = 'nature'; }
+  if (/sungai|river|danau|lake|air|water|embung|pantai/.test(t)) { boost.push('scenic'); vibe = 'scenic'; }
+  if (/sejarah|historic|landmark|wisata|candi/.test(t)) { boost.push('historic'); vibe = 'historic'; }
+  if (/aman|safe|sepi|quiet|(hindari|tidak|jangan|kurang)[^.]*ramai/.test(t)) boost.push('safety');
+  if (/pendek|shorter|kurang jauh/.test(t)) { distanceKm = Math.max(2, current.distanceKm - 1.5); action = 'regenerate'; }
+  if (/jauh|panjang|longer|tambah jarak/.test(t)) { distanceKm = Math.min(15, current.distanceKm + 1.5); action = 'regenerate'; }
+  if (!boost.length && action === 'rerank') boost.push('nature');
+  return { action, distanceKm, vibe, boost, reason: `AI menyesuaikan rute: ${action === 'regenerate' ? `jarak baru ${distanceKm} km` : `mengutamakan aspek ${boost.join(', ')}`} dengan vibe ${vibe}.` };
+}
+
 $('btnAiDecide').onclick = async () => {
   const btn = $('btnAiDecide');
   btn.disabled = true;
   $('aiMode').textContent = `AI is deciding your run (mood: ${state.mood}, ${state.minutes} min)…`;
   try {
-    const res = await fetch('/api/ai/decide', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mood: state.mood, minutes: state.minutes }),
-    });
-    const data = await res.json();
+    let data = await postJson('/api/ai/decide', { mood: state.mood, minutes: state.minutes });
+    if (!data) data = { mode: 'fallback', model: 'local-heuristics', ...localDecide(state.mood, state.minutes) };
     applyDistance(data.distanceKm);
     applyVibe(data.vibe);
     state.aiReason = data.reason || null;
@@ -609,11 +647,8 @@ $('btnRefine').onclick = async () => {
   btn.disabled = true;
   $('refineStatus').textContent = 'AI is refining your routes…';
   try {
-    const res = await fetch('/api/ai/refine', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, current: { distanceKm: state.distanceKm, vibe: state.vibe } }),
-    });
-    const data = await res.json();
+    let data = await postJson('/api/ai/refine', { text, current: { distanceKm: state.distanceKm, vibe: state.vibe } });
+    if (!data) data = { mode: 'fallback', ...localRefine(text, { distanceKm: state.distanceKm, vibe: state.vibe }) };
     if (data.vibe) applyVibe(data.vibe);
     $('refineStatus').textContent = `${data.reason || 'Routes refined.'} (${data.mode === 'llm' ? 'Meta AI' : 'local fallback'})`;
     if (data.action === 'regenerate' && data.distanceKm && Math.abs(data.distanceKm - state.distanceKm) >= 0.4) {
