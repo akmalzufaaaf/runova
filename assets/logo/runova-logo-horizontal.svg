@@ -6,12 +6,11 @@
     </linearGradient>
   </defs>
   <rect x="18" y="18" width="264" height="264" rx="58" fill="url(#g)"/>
-  <g transform="translate(34,30) scale(0.5)" fill="none" stroke="#ffffff" stroke-width="54" stroke-linecap="round">
-    <path d="M118 238 C 170 158, 268 128, 398 96"/>
-    <path d="M252 258 C 205 320, 155 375, 112 424"/>
-    <path d="M252 258 C 318 268, 352 318, 338 366 C 326 406, 282 420, 252 398 C 232 383, 232 356, 250 342"/>
+  <g transform="translate(34,30) scale(0.5)" fill="none" stroke="#ffffff" stroke-linecap="round">
+    <path d="M106 240 C 154 182, 230 170, 266 197 L 326 138" stroke-width="48"/>
+    <path d="M109 384 L 192 266 C 224 275, 232 320, 211 387" stroke-width="52"/>
   </g>
-  <circle cx="182" cy="48" r="14" fill="#ffffff"/>
+  <circle cx="170" cy="86" r="15" fill="#ffffff"/>
   <text x="316" y="152" font-family="Inter, Arial, sans-serif" font-size="92" font-weight="800" letter-spacing="3" fill="#1e2242">RUNOVA</text>
   <text x="320" y="208" font-family="Inter, Arial, sans-serif" font-size="31" font-weight="600" letter-spacing="1" fill="#625fe0">AI designs your running loop</text>
 </svg>

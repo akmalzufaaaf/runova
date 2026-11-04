@@ -1,9 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 480">
-  <!-- Runova mark — abstract curved runner, white on transparent (dark backgrounds) -->
-  <g fill="none" stroke="#ffffff" stroke-width="54" stroke-linecap="round">
-    <path d="M118 238 C 170 158, 268 128, 398 96"/>
-    <path d="M252 258 C 205 320, 155 375, 112 424"/>
-    <path d="M252 258 C 318 268, 352 318, 338 366 C 326 406, 282 420, 252 398 C 232 383, 232 356, 250 342"/>
+  <!-- Runova logo — abstract curved runner, white on transparent (final, dark backgrounds) -->
+  <g fill="none" stroke="#ffffff" stroke-linecap="round">
+    <path d="M106 240 C 154 182, 230 170, 266 197 L 326 138" stroke-width="48"/>
+    <path d="M109 384 L 192 266 C 224 275, 232 320, 211 387" stroke-width="52"/>
   </g>
-  <circle cx="296" cy="36" r="27" fill="#ffffff"/>
+  <circle cx="272" cy="112" r="30" fill="#ffffff"/>
 </svg>
