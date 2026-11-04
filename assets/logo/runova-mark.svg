@@ -1,11 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 480">
-  <!-- Runova runner silhouette — purple on transparent -->
-  <g fill="none" stroke="#625fe0" stroke-width="34" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M292 148 L250 238"/>
-    <path d="M282 176 L344 208 L380 172"/>
-    <path d="M284 178 L224 202 L190 244"/>
-    <path d="M250 238 L322 272 L344 344"/>
-    <path d="M250 238 L182 292 L118 282"/>
+  <!-- Runova mark — abstract curved runner, purple on transparent -->
+  <g fill="none" stroke="#625fe0" stroke-width="54" stroke-linecap="round">
+    <path d="M118 238 C 170 158, 268 128, 398 96"/>
+    <path d="M252 258 C 205 320, 155 375, 112 424"/>
+    <path d="M252 258 C 318 268, 352 318, 338 366 C 326 406, 282 420, 252 398 C 232 383, 232 356, 250 342"/>
   </g>
-  <circle cx="306" cy="106" r="30" fill="#625fe0"/>
+  <circle cx="296" cy="36" r="27" fill="#625fe0"/>
 </svg>
