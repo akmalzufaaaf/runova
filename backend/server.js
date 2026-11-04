@@ -22,6 +22,11 @@ function readBody(req) {
     req.on('error', reject);
   });
 }
+/* Never crash on malformed JSON bodies — treat them as empty objects */
+async function readJsonBody(req) {
+  try { return await readJsonBody(req); } catch (e) { return {}; }
+}
+process.on('unhandledRejection', (e) => console.error('Unhandled rejection (kept alive):', e && e.message));
 
 async function proxy(req, res, urls, contentType) {
   const body = await readBody(req);
@@ -90,7 +95,7 @@ function fallbackParse(text) {
 }
 
 async function handleAiParse(req, res) {
-  const body = JSON.parse((await readBody(req)).toString() || '{}');
+  const body = await readJsonBody(req);
   const text = body.text || '';
   let result = null, mode = 'fallback';
   const content = await aiChat([
@@ -105,7 +110,7 @@ async function handleAiParse(req, res) {
 }
 
 async function handleAiExplain(req, res) {
-  const body = JSON.parse((await readBody(req)).toString() || '{}');
+  const body = await readJsonBody(req);
   const routes = body.routes || [];
   const vibe = body.vibe || 'nature';
   let items = null, mode = 'fallback';
@@ -144,7 +149,7 @@ function fallbackDecide(mood, minutes) {
   return { distanceKm: km, vibe: t.vibe, reason: t.reason };
 }
 async function handleAiDecide(req, res) {
-  const body = JSON.parse((await readBody(req)).toString() || '{}');
+  const body = await readJsonBody(req);
   const mood = body.mood || 'fresh';
   const minutes = Math.min(120, Math.max(10, body.minutes || 40));
   let result = null, mode = 'fallback';
@@ -175,7 +180,7 @@ function fallbackRefine(text, current) {
   return { action, distanceKm, vibe, boost, reason: `AI menyesuaikan rute: ${action === 'regenerate' ? `jarak baru ${distanceKm} km` : `mengutamakan aspek ${boost.join(', ')}`} dengan vibe ${vibe}.` };
 }
 async function handleAiRefine(req, res) {
-  const body = JSON.parse((await readBody(req)).toString() || '{}');
+  const body = await readJsonBody(req);
   const current = body.current || { distanceKm: 5, vibe: 'nature' };
   let result = null, mode = 'fallback';
   const content = await aiChat([
@@ -191,7 +196,7 @@ async function handleAiRefine(req, res) {
 
 /* (5) AUDIO GUIDE: one short narration per named highlight on the route */
 async function handleAiGuide(req, res) {
-  const body = JSON.parse((await readBody(req)).toString() || '{}');
+  const body = await readJsonBody(req);
   const points = (body.points || []).slice(0, 6);
   const vibe = body.vibe || 'nature';
   let items = null, mode = 'fallback';
@@ -275,7 +280,7 @@ function sendJson(res, status, obj) {
 }
 async function handleRegister(req, res) {
   if (!dbReady) return sendJson(res, 503, { error: 'database unavailable' });
-  const b = JSON.parse((await readBody(req)).toString() || '{}');
+  const b = await readJsonBody(req);
   const name = (b.name || '').trim();
   if (!name || !b.password || String(b.password).length < 4) return sendJson(res, 400, { error: 'name and password (min 4 chars) required' });
   try {
@@ -288,7 +293,7 @@ async function handleRegister(req, res) {
 }
 async function handleLogin(req, res) {
   if (!dbReady) return sendJson(res, 503, { error: 'database unavailable' });
-  const b = JSON.parse((await readBody(req)).toString() || '{}');
+  const b = await readJsonBody(req);
   const idf = (b.identifier || b.name || '').trim();
   const r = await pool.query('SELECT id, name, password_hash FROM users WHERE name=$1 OR email=$1', [idf]);
   const user = r.rows[0];
@@ -300,7 +305,7 @@ async function handleRuns(req, res) {
   if (!auth) return sendJson(res, 401, { error: 'login required' });
   if (!dbReady) return sendJson(res, 503, { error: 'database unavailable' });
   if (req.method === 'POST') {
-    const b = JSON.parse((await readBody(req)).toString() || '{}');
+    const b = await readJsonBody(req);
     const r = await pool.query(
       `INSERT INTO runs (user_id, route_name, distance_km, kcal, vibe, vibe_match, safety_score, rating, geometry)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id, created_at`,
