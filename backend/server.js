@@ -326,6 +326,15 @@ async function handleProfile(req, res) {
 initDb();
 
 const server = http.createServer(async (req, res) => {
+  // CORS: the frontend (GitHub Pages) calls this backend cross-origin
+  if (req.headers.origin) {
+    res.setHeader('Access-Control-Allow-Origin', req.headers.origin);
+    res.setHeader('Vary', 'Origin');
+  }
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
+
   const urlPath = req.url.split('?')[0];
 
   if (urlPath === '/api/health') {

@@ -30,9 +30,11 @@ const VIBE_LABELS = {
 };
 const $ = (id) => document.getElementById(id);
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-/* When the frontend is hosted separately (GitHub Pages), point it at a hosted
-   backend once: localStorage.setItem('runova_api_base', 'https://your-backend.up.railway.app') */
-const API_BASE = localStorage.getItem('runova_api_base') || '';
+/* Frontend hosted separately (GitHub Pages) talks to the Railway backend.
+   Localhost development still uses the local backend. Override anytime with:
+   localStorage.setItem('runova_api_base', 'https://your-backend') */
+const API_BASE = localStorage.getItem('runova_api_base')
+  || (['localhost', '127.0.0.1'].includes(location.hostname) ? '' : 'https://runova-production.up.railway.app');
 
 /* ================= LOGIN ================= */
 function initLogin() {
