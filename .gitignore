@@ -1,0 +1,11 @@
+# secrets — never commit API keys
+.env
+.env.*
+*.key
+meta-api-key
+
+# deps / logs / OS
+node_modules/
+*.log
+.DS_Store
+Thumbs.db
