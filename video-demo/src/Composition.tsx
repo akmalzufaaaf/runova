@@ -1,12 +1,16 @@
 import React from "react";
 import {
   AbsoluteFill,
-  Series,
+  Audio,
+  staticFile,
   useCurrentFrame,
   useVideoConfig,
   interpolate,
   spring,
 } from "remotion";
+import { TransitionSeries, linearTiming } from "@remotion/transitions";
+import { fade } from "@remotion/transitions/fade";
+import { slide } from "@remotion/transitions/slide";
 
 const PURPLE = "#625fe0";
 const INK = "#1e2242";
@@ -334,18 +338,38 @@ const SceneMeta: React.FC = () => {
   );
 };
 
+const Music: React.FC = () => {
+  const frame = useCurrentFrame();
+  const { durationInFrames } = useVideoConfig();
+  const volume = Math.min(
+    interpolate(frame, [0, 45], [0, 0.55], { extrapolateLeft: "clamp", extrapolateRight: "clamp" }),
+    interpolate(frame, [durationInFrames - 110, durationInFrames - 10], [0.55, 0], { extrapolateLeft: "clamp", extrapolateRight: "clamp" })
+  );
+  return <Audio src={staticFile("music.mp3")} volume={volume} />;
+};
+
 export const RunovaDemo: React.FC = () => {
+  const t = (presentation: any) => (
+    <TransitionSeries.Transition presentation={presentation} timing={linearTiming({ durationInFrames: 18 })} />
+  );
   return (
     <AbsoluteFill style={{ background: BG }}>
-      <Series>
-        <Series.Sequence durationInFrames={600}><SceneHook /></Series.Sequence>
-        <Series.Sequence durationInFrames={750}><SceneDecide /></Series.Sequence>
-        <Series.Sequence durationInFrames={900}><SceneRoutes /></Series.Sequence>
-        <Series.Sequence durationInFrames={750}><SceneRefine /></Series.Sequence>
-        <Series.Sequence durationInFrames={1200}><SceneRun /></Series.Sequence>
-        <Series.Sequence durationInFrames={600}><SceneDone /></Series.Sequence>
-        <Series.Sequence durationInFrames={600}><SceneMeta /></Series.Sequence>
-      </Series>
+      <Music />
+      <TransitionSeries>
+        <TransitionSeries.Sequence durationInFrames={618}><SceneHook /></TransitionSeries.Sequence>
+        {t(fade())}
+        <TransitionSeries.Sequence durationInFrames={768}><SceneDecide /></TransitionSeries.Sequence>
+        {t(slide({ direction: "from-right" }))}
+        <TransitionSeries.Sequence durationInFrames={918}><SceneRoutes /></TransitionSeries.Sequence>
+        {t(fade())}
+        <TransitionSeries.Sequence durationInFrames={768}><SceneRefine /></TransitionSeries.Sequence>
+        {t(slide({ direction: "from-left" }))}
+        <TransitionSeries.Sequence durationInFrames={1218}><SceneRun /></TransitionSeries.Sequence>
+        {t(fade())}
+        <TransitionSeries.Sequence durationInFrames={618}><SceneDone /></TransitionSeries.Sequence>
+        {t(fade())}
+        <TransitionSeries.Sequence durationInFrames={600}><SceneMeta /></TransitionSeries.Sequence>
+      </TransitionSeries>
     </AbsoluteFill>
   );
 };
